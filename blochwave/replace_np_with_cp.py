@@ -1,5 +1,6 @@
 """Bloch wave solver"""
 import importlib as imp
+import cupy as cp
 import numpy as np,pandas as pd,pickle5,os,glob,tifffile,mrcfile
 from typing import TYPE_CHECKING, Dict, Iterable, Optional, Sequence, Union
 from subprocess import check_output,Popen,PIPE
@@ -12,9 +13,9 @@ from scattering import structure_factor as sf       #;imp.reload(sf)
 from scattering import scattering_factors as scatf  #;imp.reload(scatf)
 from EDutils import viewers                         #;imp.reload(viewers)
 from EDutils import utilities as ut                 #;imp.reload(ut)
-from EDutils import pets as pt                      ;imp.reload(pt)
-from EDutils import display as EDdisp               ;imp.reload(EDdisp)
-from . import util as bloch_util                    ;imp.reload(bloch_util)
+from EDutils import pets as pt                      #;imp.reload(pt)
+from EDutils import display as EDdisp               #;imp.reload(EDdisp)
+from . import util as bloch_util                    #;imp.reload(bloch_util)
 felix='%s/bin/felix' %os.path.dirname(__file__)
 
 class Bloch:
@@ -67,6 +68,7 @@ class Bloch:
         self._set_structure(cif_file)
         beam_args={'keV':keV,'u':u}
         beam_args.update(beam)
+        print(beam_args)
         self.set_beam(**beam_args)
         self.set_name(name,path)
         self.nbeams=nbeams
@@ -106,8 +108,8 @@ class Bloch:
         """
         basefile = self.cif_file.replace('.cif','')
         if not name:
-            u_str = ''.join(['%d' %np.round(u) for u in self.Kabc0])
-            name='%s%s_%dkeV_bloch' %(os.path.basename(basefile),u_str,np.round(self.keV))
+            u_str = ''.join(['%d' %cp.round(u) for u in self.Kabc0])
+            name='%s%s_%dkeV_bloch' %(os.path.basename(basefile),u_str,cp.round(self.keV))
         if not path:path=os.path.dirname(basefile)
         self.path = path                #; print(self.path)
         self.name = name                #;print('name:',self.name)
@@ -128,7 +130,7 @@ class Bloch:
 
         if dmin and self.pdb_file:
             self.hklF,self.Fhkl = ut.gemmi_sf(self.pdb_file,dmin)
-            self.Nmax=np.array(self.Fhkl.shape[0])//4#.min()
+            self.Nmax=cp.array(self.Fhkl.shape[0])//4#.min()
             print('Nmax:',self.Nmax)
             # gemmi='/home/tarik/Documents/git/github/gemmi/gemmi'
             # gemmi_cmd="%s sfcalc -v --dmin=%.3f --wavelength=%3.f --for=mott-bethe %s | " %(gemmi,dmin,self.lam,crys)
@@ -179,15 +181,21 @@ class Bloch:
 
             The order of priority for setting up the beam is K,u0,u
         """
-        if isinstance(K,list) or isinstance(K,np.ndarray):
-            self.k0 = np.linalg.norm(K)
+        
+        if isinstance(K,list) or isinstance(K,cp.ndarray):
+            self.k0 = cp.linalg.norm(K)
             self.u  =  K/self.k0
+            
         else:
-            if isinstance(u0,list) or isinstance(u0,np.ndarray):
-                u = np.array(u0).dot(self.lat_vec)
-            self.u  = np.array(u)/np.linalg.norm(u)
+            
+            if isinstance(u0,list) or isinstance(u0,cp.ndarray):
+                
+                u = cp.array(u0.get()).dot(self.lat_vec)
+            #print(type(u))
+            u = cp.array(u)
+            self.u  = u/cp.linalg.norm(u)
             self.k0 = 1/cst.keV2lam(keV)
-
+ 
         self.lam = 1/self.k0
         self.keV = cst.lam2keV(self.lam)
         self.sig = cst.keV2sigma(self.keV)
@@ -260,7 +268,7 @@ class Bloch:
         else:
             if Nmax or dmin :self.update_Nmax(Nmax,dmin)
             if beam : self.set_beam(**beam)
-            if Smax or isinstance(hkl,np.ndarray):
+            if Smax or isinstance(hkl,cp.ndarray):
                 self._set_excitation_errors(Smax,hkl)
                 self._set_Vg()
             self._solve_Bloch(show_H='H' in opts,Vopt0='0' in opts,v='v' in opts,
@@ -278,7 +286,7 @@ class Bloch:
         if not gemmi:dmin=None
         self.set_beam(keV=keV,u=u)
         if Nmax or dmin :self.update_Nmax(Nmax,dmin)
-        if Smax or isinstance(hkl,np.ndarray):
+        if Smax or isinstance(hkl,cp.ndarray):
             self._set_excitation_errors(Smax,hkl)
             self._set_Vg()
         self.save()
@@ -329,9 +337,9 @@ class Bloch:
         self.gammaj = (df.gr+1J*df.gi).values
         # g = np.loadtxt(os.path.join(self.path,'felix/eigenvals.txt'))
         # self.gammaj = g[:,3::2]+1J*g[:,4::2];g=g[:,0]
-        C = np.loadtxt(os.path.join(self.path,'felix/eigenvec.txt'))
+        C = cp.loadtxt(os.path.join(self.path,'felix/eigenvec.txt'))
         self.CjG = C[:,3::2]+1J*C[:,4::2]
-        self.invCjG=np.conj(self.CjG.T)
+        self.invCjG=cp.conj(self.CjG.T)
 
         self.df_G = df[['h','k','l']]
         self.df_G.index = [str(tuple(h)) for h in self.df_G.values]
@@ -354,10 +362,10 @@ class Bloch:
             gn = Rmat.dot(self.df_G[['qx','qy','qz']].T).T.dot(surf_norm)
             Knorm = self.k0*surf_norm[-1]
             self.Knorm=Knorm
-            sqrtkg=np.sqrt(1+gn/Knorm)  #dyngo implementation
+            sqrtkg=cp.sqrt(1+gn/Knorm)  #dyngo implementation
             Sg*=2*self.k0/sqrtkg
 
-        pre = 1/np.sqrt(1-cst.keV2v(self.keV)**2)
+        pre = 1/cp.sqrt(1-cst.keV2v(self.keV)**2)
         Ug = pre*self.Fhkl/(self.crys.volume*np.pi)*self.eps #/3
 
         #####################
@@ -371,9 +379,9 @@ class Bloch:
 
         print(Ug.shape)
         if v:print(colors.blue+'...assembling %dx%d matrix...' %((Sg.shape[0],)*2)+colors.black)
-        H = np.diag(Sg+0J)
+        H = cp.diag(Sg+0J)
         for iG,hkl_G in enumerate(hkl) :
-            U_iG = np.array([Ug[tuple(hkl_J+U0_idx)] for hkl_J in hkl_G-hkl]) #;print(V_iG.shape)
+            U_iG = cp.array([Ug[tuple(hkl_J+U0_idx)] for hkl_J in hkl_G-hkl]) #;print(V_iG.shape)
             # print('G : ',hkl_G)
             # print('U_G:',Ug[tuple(U0_idx+hkl_G)])
             # print('idx iG:',[tuple(hkl_J+U0_idx) for hkl_J in hkl_G-hkl])
@@ -381,7 +389,7 @@ class Bloch:
             if self.dyngo:
                 # qh = np.linalg.norm(self.lat_vec.T.dot((hkl_G-hkl).T),axis=0)
                 qh = Rmat.dot((hkl_G-hkl).T).T.dot(surf_norm)
-                sqrtkh = np.sqrt(1+qh/Knorm)
+                sqrtkh = cp.sqrt(1+qh/Knorm)
                 H[iG,:] += U_iG/(sqrtkg[iG]*sqrtkh)  #so dyngo implementation
             else:
                 H[iG,:] += U_iG/(2*self.k0)  #off diagonal terms as potential
@@ -394,8 +402,8 @@ class Bloch:
         if show_H:self.show_H()
 
         if v:print(colors.blue+'...diagonalization...'+colors.black)
-        self.gammaj,self.CjG = np.linalg.eigh(self.H) #;print(red+'Ek',lk,black);print(wk)
-        self.invCjG = np.linalg.inv(self.CjG)
+        self.gammaj,self.CjG = cp.linalg.eigh(self.H) #;print(red+'Ek',lk,black);print(wk)
+        self.invCjG = cp.linalg.inv(self.CjG)
         self.solved = True
 
     def _set_structure(self,cif_file):
@@ -407,9 +415,9 @@ class Bloch:
         self.cif_file = cif_file
         self.pdb_file = pdb_file
         self.crys     = ut.import_crys(self.cif_file)
-        self.lat_vec0 = np.array(self.crys.lattice_vectors)
-        self.lat_vec  = np.array(self.crys.reciprocal_vectors)/(2*np.pi)
-        self.pattern  = np.array([np.hstack([a.coords_fractional,a.atomic_number]) for a in self.crys.atoms] )
+        self.lat_vec0 = cp.array(self.crys.lattice_vectors)
+        self.lat_vec  = cp.array(self.crys.reciprocal_vectors)/(2*np.pi)
+        self.pattern  = cp.array([cp.hstack([a.coords_fractional,a.atomic_number]) for a in self.crys.atoms] )
 
     def _set_excitation_errors(self,Smax=0.02,hkl=None,felix=False):
         """ get excitation errors for Sg<Smax
@@ -418,8 +426,8 @@ class Bloch:
         """
         # print(colors.blue+'... setting excitation error ... '+colors.black)
         K,K0 = self.K,self.k0
-        if isinstance(hkl,list) or isinstance(hkl,np.ndarray):
-            hkl = np.array(hkl)
+        if isinstance(hkl,list) or isinstance(hkl,cp.ndarray):
+            hkl = cp.array(hkl)
             h,k,l = hkl.T
             qx,qy,qz = hkl.dot(self.lat_vec).T
         else:
@@ -432,9 +440,9 @@ class Bloch:
         # Gz  = -( qx*Kx+qy*Ky+qz*Kz)/K0
         # GzG = Gz -(qx**2+qy**2+qz**2)/(2*K0)
         # print(Sw.shape,Gz.shape,GzG.shape)
-        q = np.linalg.norm(np.array([qx,qy,qz]).T,axis=1)
+        q = cp.linalg.norm(cp.array([qx,qy,qz]).T,axis=1)
         if felix:
-            self.df_G[['qx','qy','qz','q','Sw','Swa']] = np.array([qx,qy,qz,q,Sw,abs(Sw)]).T
+            self.df_G[['qx','qy','qz','q','Sw','Swa']] = cp.array([qx,qy,qz,q,Sw,abs(Sw)]).T
             self.df_G['I'] = 0
             self.df_G.loc[str((0,0,0)),'I'] = 1
             return
@@ -442,7 +450,7 @@ class Bloch:
         # print('ok')
         if Smax:
             idx = abs(Sw)<Smax
-            h,k,l = np.array([h[idx],k[idx],l[idx]],dtype=int)
+            h,k,l = cp.array([h[idx],k[idx],l[idx]],dtype=int)
             qx,qy,qz,q,Sw = qx[idx],qy[idx],qz[idx],q[idx],Sw[idx]#,Swa[idx]
             # Gz,GzG = Gz[idx],GzG[idx]
         d = dict(zip(['h','k','l','qx','qy','qz','q','Sw','Swa'],[h,k,l,qx,qy,qz,q,Sw,abs(Sw)]))
@@ -465,19 +473,19 @@ class Bloch:
             idx = [i for i,x in enumerate(self.pattern[:,:3]) if all(x<0.99)]
             xi   = self.pattern[idx,:3].T
             # print(xi)
-            Za   = np.array(self.pattern[idx,-1],dtype=int)
+            Za   = cp.array(self.pattern[idx,-1],dtype=int)
             fj   = scatf.get_fe(Za,q) #;fj = 1 #testing exp factor alone
             #### Fhkl[nGs] = sum_{natoms} fj [nGs x natoms] * hkl[nGsx3].dot(xi[3,natoms])
-            Fhkl = np.sum(fj*np.exp(-2J*np.pi*hkl.dot(xi)),axis=1)
+            Fhkl = cp.sum(fj*cp.exp(-2J*np.pi*hkl.dot(xi)),axis=1)
             # print(self.crys,xi)
         else:
             hkl  = self.df_G[['h','k','l']].values
             Fhkl = self.Fhkl.copy()
-            V0_idx = np.array([2*self.Nmax]*3)
+            V0_idx = cp.array([2*self.Nmax]*3)
             Fhkl[tuple(V0_idx)] = 0
-            Fhkl = np.array([ Fhkl[tuple(hkl_G+V0_idx)] for hkl_G in hkl])
+            Fhkl = cp.array([ Fhkl[tuple(hkl_G+V0_idx)] for hkl_G in hkl])
 
-        self.pre = 1/np.sqrt(1-cst.keV2v(self.keV)**2)
+        self.pre = 1/cp.sqrt(1-cst.keV2v(self.keV)**2)
         Vg_G = Fhkl/(self.crys.volume*np.pi)*self.pre*self.eps
         Vg_G = Fhkl
         px,py,e0x = ut.project_beams(K=self.K,qxyz=self.get_G(),e0=[1,0,0],v=1)
@@ -487,16 +495,16 @@ class Bloch:
         self.df_G['Vg'] = Vg_G
         self.df_G['Vga'] = abs(Vg_G)
         self.df_G['Swl'] = bloch_util.logM(self.df_G['Sw'])
-        self.df_G['L']  = np.ones(Vg_G.shape)
+        self.df_G['L']  = cp.ones(Vg_G.shape)
         self._set_zones()
         self.df_G.loc[str((0,0,0)),'Vg'] = 0
 
     def _set_zones(self):
         hkl     = self.df_G[['h','k','l']].values
         # Khkls   = np.round(hkl.dot(self.Kuvw/np.linalg.norm(self.Kuvw))*100)/100
-        Khkls    = np.round(hkl.dot(self.Kuvw0)*100)/100 #integer only in zone axis orientation
-        Khkl,ar = np.unique(Khkls,return_inverse=True) #; print(Khkls);print(zones);print(ar)
-        zones = np.argsort(Khkl)
+        Khkls    = cp.round(hkl.dot(self.Kuvw0)*100)/100 #integer only in zone axis orientation
+        Khkl,ar = cp.unique(Khkls,return_inverse=True) #; print(Khkls);print(zones);print(ar)
+        zones = cp.argsort(Khkl)
         self.df_G['zone'] = zones[ar]
 
     def _get_central_beam(self):
@@ -507,13 +515,13 @@ class Bloch:
         id0 = self._get_central_beam()
         gammaj,CjG = self.gammaj,self.CjG
         if self.dyngo:
-            S = CjG.dot(np.diag(np.exp(1J*gammaj*self.thick*self.k0/self.Knorm))).dot(self.invCjG)
+            S = CjG.dot(cp.diag(cp.exp(1J*gammaj*self.thick*self.k0/self.Knorm))).dot(self.invCjG)
         else:
-            S = CjG.dot(np.diag(np.exp(1J*gammaj*self.thick))).dot(self.invCjG)
+            S = CjG.dot(cp.diag(cp.exp(1J*gammaj*self.thick))).dot(self.invCjG)
         # S = S[:,id0]
         S = S[id0,:]
         self.df_G['S'] = S
-        self.df_G['I'] = np.abs(S)**2
+        self.df_G['I'] = cp.abs(S)**2
         if self.dyngo:
             self.df_G['I']*=self.scale**2
 
@@ -527,9 +535,9 @@ class Bloch:
         t,sig = self.thick, self.sig
 
         #[Ug]=[A-2], [k0]=[A^-1], [t]=[A], [Fhkl]=3[fe]=[A]
-        Sg = np.pi/self.k0*Ug*t*np.sinc(Sw*t)
+        Sg = np.pi/self.k0*Ug*t*cp.sinc(Sw*t)
         self.df_G['Sg'] = Sg
-        self.df_G['Ig'] = np.abs(Sg)**2
+        self.df_G['Ig'] = cp.abs(Sg)**2
 
     def _set_beams_vs_thickness(self,thicks=None):
         """ get Scattering matrix as function of thickness for all beams
@@ -546,7 +554,7 @@ class Bloch:
         # t0  = time.time()
         #### fast efficient
         # M = np.exp(2J*np.pi*np.outer(gammaj,self.z))*(invCjG[:,id0][:,None])
-        M = np.exp(1J*np.outer(gammaj,self.z))*(invCjG[:,id0][:,None])
+        M = cp.exp(1J*cp.outer(gammaj,self.z))*(invCjG[:,id0][:,None])
         St = CjG.dot(M)
 
         #### slower
@@ -559,15 +567,15 @@ class Bloch:
         # print('done %.2f' %(time.time()-t0))
 
         self.Sz = St
-        self.Iz = np.abs(self.Sz)**2
+        self.Iz = cp.abs(self.Sz)**2
         Sw,Ug = self.df_G[['Sw','Vg']].values.T
-        Sz_kin = np.array([np.pi/self.k0*Ug*t*np.sinc(Sw*t) for t in self.z]).T
-        self.Iz_kin = np.abs(Sz_kin)**2
+        Sz_kin = cp.array([np.pi/self.k0*Ug*t*cp.sinc(Sw*t) for t in self.z]).T
+        self.Iz_kin = cp.abs(Sz_kin)**2
 
     def _set_thicks(self,thicks):
-        if isinstance(thicks,tuple):thicks = np.linspace(*thicks)
+        if isinstance(thicks,tuple):thicks = cp.linspace(*thicks)
         elif isinstance(thicks,float) or isinstance(thicks,int) : thicks=[thicks]
-        self.z = np.array(thicks)
+        self.z = cp.array(thicks)
 
     def _get_pkl(self,file=None):
         if not file:file=os.path.join(self.path,self.name+'.pkl')
@@ -642,7 +650,7 @@ class Bloch:
         refl = [h for h in refl if h in self.df_G.index]
 
         if index:
-            idx = [np.where(self.df_G.index==h)[0][0] for h in refl]
+            idx = [cp.where(self.df_G.index==h)[0][0] for h in refl]
             return idx
         else:
             return refl
@@ -651,7 +659,7 @@ class Bloch:
         dict_opt:bool=False,
         idx:Iterable=slice(0,None,1),
         iZs:Iterable=slice(0,None,1),
-    )->np.ndarray:
+    )->cp.ndarray:
         """get beams as function of thickness
 
         Parameters
@@ -787,7 +795,7 @@ class Bloch:
         # print(Iz_kin.shape,Iz_dyn.shape)
         cs = dsp.getCs(cmap,nzs) #; print(len(cs),Iz_dyn.shape,Iz_kin.shape)
         # scat=tuple( [[I_kin,I_dyn,cs[i]] for i,(I_dyn,I_kin) in enumerate(zip(self.Iz[:,::iZ],self.Iz_kin[:,::iZ]))])
-        plts=[[np.log10(I_kin),np.log10(I_dyn),[cs[i],'o'],'$z=%d\AA$' %z] for i,(z,I_dyn,I_kin) in enumerate(zip(z,Iz_dyn.T,Iz_kin.T))]
+        plts=[[cp.log10(I_kin),cp.log10(I_dyn),[cs[i],'o'],'$z=%d\AA$' %z] for i,(z,I_dyn,I_kin) in enumerate(zip(z,Iz_dyn.T,Iz_kin.T))]
         # plts+=[ [[0,1],[0,1],[(0.5,)*3,'--'],''] ]
         return dsp.stddisp(plts,labs=['$I_{kin}$','$I_{dyn}$'],sargs={'alpha':0.5},**kwargs)
 
@@ -807,8 +815,8 @@ class Bloch:
         Fhkl  = self.Fhkl #.copy()
         if isinstance(s,tuple):
             Fhkl   = Fhkl[s]
-            nx,ny  = np.array((np.array(Fhkl.shape)-1)/2,dtype=int)
-            i,j    = np.meshgrid(np.arange(-nx,nx+1),np.arange(-ny,ny+1))
+            nx,ny  = cp.array((cp.array(Fhkl.shape)-1)/2,dtype=int)
+            i,j    = cp.meshgrid(cp.arange(-nx,nx+1),cp.arange(-ny,ny+1))
             fig,ax = dsp.stddisp(scat=[i,j,fz(Fhkl)],title=tle,**kwargs)
         else:
             h,k,l = self.hklF
@@ -816,7 +824,7 @@ class Bloch:
             if h3D:h3d.handler_3d(fig,persp=False)
 
     def show_H(self,**kwargs):
-        dsp.stddisp(im=[np.abs(self.H)],title='abs(H)', pOpt='im')
+        dsp.stddisp(im=[cp.abs(self.H)],title='abs(H)', pOpt='im')
 
 
     ################################################################################
@@ -888,7 +896,7 @@ class Bloch:
         pred = pred and exp
         if pred :
             hkl = [h for h in hkl if h in exp.df_pred.index]
-            hkl_lost = np.setdiff1d(self.df_G.index,hkl)
+            hkl_lost = cp.setdiff1d(self.df_G.index,hkl)
             if any(hkl_lost):
                 print(colors.red+"warning : reflections ignored "+colors.black)
                 print(self.df_G.loc[hkl_lost].sort_values('I')['I'][-10:])
@@ -908,26 +916,26 @@ class Bloch:
             print('aperpixel set to %.1E A^-1 ' %(aperpixel))
         dqx,dqy = [aperpixel]*2
         if pred:
-            i,j = np.array(pxy[['px','py']].values,dtype=int).T
+            i,j = cp.array(pxy[['px','py']].values,dtype=int).T
         else:
             if rot:
-                ct,st = np.cos(np.deg2rad(rot)),np.sin(np.deg2rad(rot))
+                ct,st = cp.cos(cp.deg2rad(rot)),cp.sin(cp.deg2rad(rot))
                 px,py = ct*px-st*py,st*px+ct*py
-            i,j = np.array([np.round(px/dqx),np.round(py/dqy)],dtype=int)+Nmax
+            i,j = cp.array([cp.round(px/dqx),cp.round(py/dqy)],dtype=int)+Nmax
 
 
         #### kernel (converted to pixel locations)
         if not fbroad:
-            fbroad=lambda r2:np.exp(-r2/(gs3/3)**2)
-            nx,ny = np.array(np.floor(gs3/np.array([dqx,dqy])),dtype=int)
+            fbroad=lambda r2:cp.exp(-r2/(gs3/3)**2)
+            nx,ny = cp.array(cp.floor(gs3/cp.array([dqx,dqy])),dtype=int)
         else:
             nx,ny=nX,nX
-        ix,iy = np.meshgrid(range(-nx,nx+1),range(-ny,ny+1))
+        ix,iy = cp.meshgrid(range(-nx,nx+1),range(-ny,ny+1))
         x,y = ix*dqx,iy*dqy
         ## Gaussian broadening
         r2 = (x**2+y**2)
         Pb = fbroad(r2)#;dsp.stddisp(im=[x,y,Pb],pOpt='im')
-        im0 = np.zeros((2*Nmax,)*2)
+        im0 = cp.zeros((2*Nmax,)*2)
         for i0,j0,I0 in zip(i,j,I):
             i0x,j0y = i0+ix,j0+iy
             idx     = (i0x>=0) & (j0y>=0)  & (i0x<2*Nmax) & (j0y<2*Nmax)
@@ -937,9 +945,9 @@ class Bloch:
 
         #### noise
         if rmax:
-            h,k = np.meshgrid(range(-Nmax,Nmax),range(-Nmax,Nmax))
-            r = np.sqrt(h**2+k**2);r[r==0]=1
-            im0 += rmax*np.random.rand(*im0.shape)#/(rmax*r)
+            h,k = cp.meshgrid(range(-Nmax,Nmax),range(-Nmax,Nmax))
+            r = cp.sqrt(h**2+k**2);r[r==0]=1
+            im0 += rmax*cp.random.rand(*im0.shape)#/(rmax*r)
 
         return im0*Imax
 
@@ -1008,7 +1016,7 @@ class Bloch:
 
         if not tiff_file:
             tiff_file = os.path.join(self.path,self.name+'_%dA' %thick+'.tiff')
-        I = np.array(im0*Imax,dtype='uint16')
+        I = cp.array(im0*Imax,dtype='uint16')
 
         # ix,iy = np.meshgrid(range(2*Nmax),range(2*Nmax))
         # dsp.stddisp(im=[ix,iy,I],plots=[j,i,'bo'],xylims=[0,512,0,512],
@@ -1042,8 +1050,8 @@ class Bloch:
         opt:  S(solve) s(save) p(plot)
         """
         solve,save,show = 'S' in opts,'s' in opts,'p' in opts
-        Nmax,Smax=[a.flatten() for a in np.meshgrid(Nmax,Smax)]
-        z=np.array(z)
+        Nmax,Smax=[a.flatten() for a in cp.meshgrid(Nmax,Smax)]
+        z=cp.array(z)
         df=pd.DataFrame(columns=['Nmax','Smax','nbeams','Iz'])
         # simulate
         self.update_Nmax(Nmax[0])
@@ -1084,7 +1092,7 @@ class Bloch:
         x = self.df[xlab]
         idx_s = self.get_beam(refl=hkl)
         #Iz.shape:nbeams x nsimus
-        Iz = np.array([r.Iz[idx_s,-1] for i,r in self.df.iterrows()]).T
+        Iz = cp.array([r.Iz[idx_s,-1] for i,r in self.df.iterrows()]).T
         cs=dsp.getCs('Spectral',len(hkl))
         #plot
         plts=[ [x,I,[c,'-o'],h]  for i,h,c,I in zip(idx_s,hkl,cs,Iz)]

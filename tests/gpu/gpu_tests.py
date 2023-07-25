@@ -1,4 +1,6 @@
-from blochwave import bloch
+#from blochwave import bloch
+from blochwave import gpu_diagonalisation as bloch
+
 import matplotlib
 matplotlib.use('QtAgg')
 

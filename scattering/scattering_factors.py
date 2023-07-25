@@ -1,4 +1,5 @@
 import numpy as np
+import cupy as cp
 import pandas as pd
 from utils import displayStandards as dsp
 from utils import glob_colors as colors
@@ -34,9 +35,10 @@ def get_fe(Zs,q):
     q2 = q**2
     fq_e = np.zeros((q.size,Zs.size))
     for iZ,Z in enumerate(Zs):
-        a,b=np.reshape(fparams[Z,:6],(3,2)).T#;
-        c,d=np.reshape(fparams[Z,6:],(3,2)).T#;print(a,b,c,d)
-        fq = np.zeros(q.shape)
+        Z_int = Z.astype(int) # Convert Z to integer array
+        a,b=cp.reshape(fparams[Z_int,:6],(3,2)).T#;
+        c,d=cp.reshape(fparams[Z_int,6:],(3,2)).T#;print(a,b,c,d)
+        fq = cp.zeros(q.shape)
         for i in range(3):
              fq += a[i]/(b[i]+q2)+c[i]*np.exp(-d[i]*q2)
         fq_e[:,iZ]=fq
@@ -49,23 +51,33 @@ def get_elec_atomic_factors(elts,q=None,qmax=2,npts=100):
     opt : G(gauss fit), L(Lenz)
     '''
     if isinstance(elts[0],str) :
-        Z = pd.read_pickle(dat_path+'elec.pkl')['Z'][elts].values
+        Z = pd.read_pickle(dat_path+'elec.pkl')['Z'][elts].values.astype(int)
     else:
-        Z=elts
-    if not isinstance(q,np.ndarray) : q = np.linspace(0,qmax,npts)
+        Z=cp.array(elts).astype(int) # Convert the list to a NumPy array
+    if not isinstance(q,cp.ndarray) : q = cp.linspace(0,qmax,npts)
     #dummy case to disable form factor
     # if Z==[0]:return q,[np.ones(q.shape)]
     q2,fq_e,nelts = q**2,[],len(Z)
 
     fparams = np.load(dat_path+'abcd.npy',allow_pickle=True)
     for elt in range(nelts) :
-        a,b=np.reshape(fparams[Z[elt],:6],(3,2)).T
-        c,d=np.reshape(fparams[Z[elt],6:],(3,2)).T; #print(a,b,c,d)
-        fq = np.zeros(q.shape)
+        #convert numpy array to cupy
+        fparams_cp = cp.array(fparams)
+        #same code but now using cupy
+        Z_int = Z.astype(int) # Convert Z to integer array
+        
+        # Convert a, b, c and d to CuPy arrays
+        a = cp.array(fparams_cp[Z_int[elt], :6]).T
+        b = cp.array(fparams_cp[Z_int[elt], :6]).T
+        c = cp.array(fparams_cp[Z_int[elt], 6:]).T
+        d = cp.array(fparams_cp[Z_int[elt], 6:]).T
+        
+        fq = cp.zeros(q.shape)
         for i in range(3):
              fq += a[i]/(b[i]+q2)+c[i]*np.exp(-d[i]*q2)
         fq_e+=[fq]
-    return q,fq_e
+    return q.get(), [cp.asnumpy(f) for f in fq_e]
+
 
 # def get_lenz_model(Z,q,E0):
 #     T  = E0*(1+E0/(2*mc2))/(1+E0/(2*mc2))   #keV
