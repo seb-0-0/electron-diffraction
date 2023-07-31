@@ -19,56 +19,103 @@ def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
     - `hkl`     : list of 3 miller indices h,k,l each as 3Ndarray
     - `hklMax`  : int - max miller index in each direction from -hklMax to hklMax
     '''
-    #unpack
-    if not hkl : hkl = get_miller3D(hklMax,sym)
-    hx,ky,lz = hkl
-    # print('rearranging h,k,l so h[(hi,k,l)]=hi')
-    hx,ky,lz = cp.transpose(hx,[1,0,2]),cp.transpose(ky,[1,0,2]),cp.transpose(lz,[1,0,2])
-    hkl = [hx,ky,lz]
-    ra,fa = pattern[:,:3],pattern[:,3]
-    #get the datatype of fa
-    print(type(fa))
-    #convert numpy array fa to cupy array
-    fa_cp = cp.array(fa)
-    ra_cp = cp.array(ra)
-    #get the datatype of fa_cp
-    print(type(fa_cp))
-    #write same code but now using cupy
-    atoms = list(cp.array(cp.unique(fa_cp)));#print(atoms)
-    #to convert cupy array fa to numpy array, just use fa instead of fa_cp
-    #get the datatype of fa
-    print(type(fa))
-    # get scattering factor
-    b1,b2,b3 = lat_vec
-    k_x,k_y,k_z = hx*b1[0]+ky*b2[0]+lz*b3[0],hx*b1[1]+ky*b2[1]+lz*b3[1],hx*b1[2]+ky*b2[2]+lz*b3[2]
-    q = np.sqrt(k_x**2+k_y**2+k_z**2)/(2*pi)
-    q,fq = scatf.get_elec_atomic_factors(atoms,q)
-    if 'q' in v:qmax=q.get().max();print('qmax=%.4f A^-1\nmax_res=%.4f A' %(qmax,1/qmax))
-    #structure factor
-    Fhkl, n_atoms = cp.zeros(hx.shape, dtype=complex), len(atoms)
-    for i, atom in zip(range(n_atoms), atoms):
-        F_i = cp.zeros(hx.shape, dtype=complex)
-        idx = fa_cp == atom
-        
-        for ri in ra_cp[idx.get(),:]:
-            ri_cp = cp.array(ri)
-            # print(ri)
-            # print(ri,np.exp(-2*pi*1J*(ri[0]*hx+ri[1]*ky+ri[2]*lz)))
-            hx_cp, ky_cp, lz_cp = cp.array(hx), cp.array(ky), cp.array(lz)
-            F_i += cp.exp(-2*pi*1J*(ri_cp[0]*hx_cp+ri_cp[1]*ky_cp+ri_cp[2]*lz_cp))
     
-        # Broadcasting fq[i] to match F_i shape (Outside the inner loop)
-        fq_cp = cp.array(fq)
-        Fhkl += F_i * fq_cp[i][:, cp.newaxis, cp.newaxis]
+    #Check for GPU Availability: outputs True or False
+    import torch
+    use_cuda = torch.cuda.is_available()
+    print(use_cuda)    
+    
+    if use_cuda == False:
 
-    # convert Fhkl back to NumPy array for further usage (if needed)
-    Fhkl = Fhkl.get()
-
-    # cs=dsp.getCs('Spectral',n_atoms)
-    # plts=[[q.flatten(),fq[i].flatten(),[cs[i],'+'],atom] for i,atom in enumerate(atoms)]
-    # dsp.stddisp(plts,lw=2)
-    return hkl,Fhkl
-
+        #unpack
+        if not hkl : hkl = get_miller3D(hklMax,sym)
+        hx,ky,lz = hkl
+        # print('rearranging h,k,l so h[(hi,k,l)]=hi')
+        hx,ky,lz = np.transpose(hx,[1,0,2]),np.transpose(ky,[1,0,2]),np.transpose(lz,[1,0,2])
+        hkl = [hx,ky,lz]
+        ra,fa = pattern[:,:3],pattern[:,3]
+        atoms = list(np.array(np.unique(fa),dtype=int));#print(atoms)
+        # get scattering factor
+        b1,b2,b3 = lat_vec
+        k_x,k_y,k_z = hx*b1[0]+ky*b2[0]+lz*b3[0],hx*b1[1]+ky*b2[1]+lz*b3[1],hx*b1[2]+ky*b2[2]+lz*b3[2]
+        q = np.sqrt(k_x**2+k_y**2+k_z**2)/(2*pi)
+        q,fq = scatf.get_elec_atomic_factors(atoms,q)
+        if 'q' in v:qmax=q.max();print('qmax=%.4f A^-1\nmax_res=%.4f A' %(qmax,1/qmax))
+        #structure factor
+        Fhkl, n_atoms = np.zeros(hx.shape, dtype=complex), len(atoms)
+        for i, atom in zip(range(n_atoms), atoms):
+            F_i = np.zeros(hx.shape, dtype=complex)
+            idx = fa == atom
+            
+            for ri in ra[idx,:]:
+                # print(ri)
+                # print(ri,np.exp(-2*pi*1J*(ri[0]*hx+ri[1]*ky+ri[2]*lz)))
+                
+                F_i += np.exp(-2*pi*1J*(ri[0]*hx+ri[1]*ky+ri[2]*lz))
+        Fhkl += F_i*fq[i]
+       
+    
+        # cs=dsp.getCs('Spectral',n_atoms)
+        # plts=[[q.flatten(),fq[i].flatten(),[cs[i],'+'],atom] for i,atom in enumerate(atoms)]
+        # dsp.stddisp(plts,lw=2)
+        return hkl,Fhkl
+    
+    else:
+         #unpack
+        if not hkl : hkl = get_miller3D(hklMax,sym)
+        hx,ky,lz = hkl
+        # print('rearranging h,k,l so h[(hi,k,l)]=hi')
+        hx,ky,lz = cp.transpose(hx,[1,0,2]),cp.transpose(ky,[1,0,2]),cp.transpose(lz,[1,0,2])
+        hkl = [hx,ky,lz]
+        ra,fa = pattern[:,:3],pattern[:,3]
+        #get the datatype of fa
+        print(type(fa))
+        #convert numpy array fa to cupy array
+        fa_cp = cp.array(fa)
+        ra_cp = cp.array(ra)
+        #get the datatype of fa_cp
+        print(type(fa_cp))
+        #write same code but now using cupy
+        atoms = list(cp.array(cp.unique(fa_cp)));#print(atoms)
+        #to convert cupy array fa to numpy array, just use fa instead of fa_cp
+        #get the datatype of fa
+        print(type(fa))
+        # get scattering factor
+        b1,b2,b3 = lat_vec
+        k_x,k_y,k_z = hx*b1[0]+ky*b2[0]+lz*b3[0],hx*b1[1]+ky*b2[1]+lz*b3[1],hx*b1[2]+ky*b2[2]+lz*b3[2]
+        q = np.sqrt(k_x**2+k_y**2+k_z**2)/(2*pi)
+        q,fq = scatf.get_elec_atomic_factors(atoms,q)
+        if 'q' in v:qmax=q.get().max();print('qmax=%.4f A^-1\nmax_res=%.4f A' %(qmax,1/qmax))
+        #structure factor
+        Fhkl, n_atoms = cp.zeros(hx.shape, dtype=complex), len(atoms)
+        for i, atom in zip(range(n_atoms), atoms):
+            F_i = cp.zeros(hx.shape, dtype=complex)
+            idx = fa_cp == atom
+            
+            for ri in ra_cp[idx.get(),:]:
+                ri_cp = cp.array(ri)
+                # print(ri)
+                # print(ri,np.exp(-2*pi*1J*(ri[0]*hx+ri[1]*ky+ri[2]*lz)))
+                hx_cp, ky_cp, lz_cp = cp.array(hx), cp.array(ky), cp.array(lz)
+                F_i += cp.exp(-2*pi*1J*(ri_cp[0]*hx_cp+ri_cp[1]*ky_cp+ri_cp[2]*lz_cp))
+        
+            # Broadcasting fq[i] to match F_i shape (Outside the inner loop)
+            fq_cp = cp.array(fq)
+            print(fq_cp.shape)
+            Fhkl += F_i * fq_cp[0,i]
+    
+        # convert Fhkl back to NumPy array for further usage (if needed)
+        Fhkl = Fhkl.get()
+    
+        # cs=dsp.getCs('Spectral',n_atoms)
+        # plts=[[q.flatten(),fq[i].flatten(),[cs[i],'+'],atom] for i,atom in enumerate(atoms)]
+        # dsp.stddisp(plts,lw=2)
+        return hkl,Fhkl
+    
+    
+    
+    
+    
 def structure_factor2D(pattern,lat_vec,hk=None,hkMax=10,sym=1,v=0,eps=1):
     '''get structure factor
     - pattern : atomic positions in real space (fractional coordinates)
