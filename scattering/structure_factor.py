@@ -1,4 +1,5 @@
 import utils.displayStandards as dsp
+from utils import glob_colors as colors
 from . import scattering_factors as scatf
 import numpy as np
 import cupy as cp
@@ -12,6 +13,16 @@ ai = 1/np.array([0.1,0.25,0.26,0.27,1.5])**2
 fj = lambda q,j,eps:eps*(np.pi/ai[j])*np.exp(-(np.pi*q)**2/ai[j])
 
 
+#Function which takes into account scattering factor; most likely requires changes due to Fhkl not being a float and instead being an array.
+def absorptive_structure_factor_calc(x):
+    x = x + 0.1*1J*x
+    return x
+
+
+
+
+
+
 def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
     '''Computes structure factor in 3D from :
     - `pattern` : Nx4 array - N atoms with each row : fractional coordinates and Za
@@ -20,10 +31,24 @@ def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
     - `hklMax`  : int - max miller index in each direction from -hklMax to hklMax
     '''
     
+    
+    
+###Check if using absorptive structure factor for calculation
+    
+    print(colors.blue+'Incude absorption in calculation?  y/n    |  '+colors.black)
+    absorbInput = input()
+    
+#
+    
+    
+    
+    
+    
     #Check for GPU Availability: outputs True or False
     import torch
     use_cuda = torch.cuda.is_available()
     print(use_cuda)    
+    
     
     if use_cuda == False:
 
@@ -54,6 +79,7 @@ def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
                 F_i += np.exp(-2*pi*1J*(ri[0]*hx+ri[1]*ky+ri[2]*lz))
         Fhkl += F_i*fq[i]
        
+       
     
         # cs=dsp.getCs('Spectral',n_atoms)
         # plts=[[q.flatten(),fq[i].flatten(),[cs[i],'+'],atom] for i,atom in enumerate(atoms)]
@@ -69,17 +95,17 @@ def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
         hkl = [hx,ky,lz]
         ra,fa = pattern[:,:3],pattern[:,3]
         #get the datatype of fa
-        print(type(fa))
+        #print(type(fa))
         #convert numpy array fa to cupy array
         fa_cp = cp.array(fa)
         ra_cp = cp.array(ra)
         #get the datatype of fa_cp
-        print(type(fa_cp))
+        #print(type(fa_cp))
         #write same code but now using cupy
         atoms = list(cp.array(cp.unique(fa_cp)));#print(atoms)
         #to convert cupy array fa to numpy array, just use fa instead of fa_cp
         #get the datatype of fa
-        print(type(fa))
+        #print(type(fa))
         # get scattering factor
         b1,b2,b3 = lat_vec
         k_x,k_y,k_z = hx*b1[0]+ky*b2[0]+lz*b3[0],hx*b1[1]+ky*b2[1]+lz*b3[1],hx*b1[2]+ky*b2[2]+lz*b3[2]
@@ -101,7 +127,7 @@ def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
         
             # Broadcasting fq[i] to match F_i shape (Outside the inner loop)
             fq_cp = cp.array(fq)
-            print(fq_cp.shape)
+            #print(fq_cp.shape)
             Fhkl += F_i * fq_cp[0,i]
     
         # convert Fhkl back to NumPy array for further usage (if needed)
@@ -111,11 +137,17 @@ def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
         # plts=[[q.flatten(),fq[i].flatten(),[cs[i],'+'],atom] for i,atom in enumerate(atoms)]
         # dsp.stddisp(plts,lw=2)
         return hkl,Fhkl
-    
-    
-    
-    
-    
+               
+###
+        if absorbInput == 'y':
+            print(colors.blue+'Using absorptive structure factor'+colors.black)
+            Fhkl = absorptive_structure_factor_calc(Fhkl)
+            return Fhkl
+        else:
+            pass
+             
+#
+
 def structure_factor2D(pattern,lat_vec,hk=None,hkMax=10,sym=1,v=0,eps=1):
     '''get structure factor
     - pattern : atomic positions in real space (fractional coordinates)
@@ -144,7 +176,9 @@ def structure_factor2D(pattern,lat_vec,hk=None,hkMax=10,sym=1,v=0,eps=1):
         Fhl += F_i*fq[i]
     return hl,Fhl
 
-###
+
+
+
 def get_pendulossung(name='Si',miller=[0,0,0],keV=200,opt='p'):
     ''' give the theorertical 2-beam approximation Pendullosung thickness
     - `name`    : compound
