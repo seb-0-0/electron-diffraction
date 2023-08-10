@@ -13,9 +13,9 @@ ai = 1/np.array([0.1,0.25,0.26,0.27,1.5])**2
 fj = lambda q,j,eps:eps*(np.pi/ai[j])*np.exp(-(np.pi*q)**2/ai[j])
 
 
-#Function which takes into account scattering factor; most likely requires changes due to Fhkl not being a float and instead being an array.
-def absorptive_structure_factor_calc(x):
-    x = x + 0.1*1J*x
+#Function which calculates complex coefficient
+def absorb_coeff(x):
+    x = 0.1*1J*x
     return x
 
 
@@ -33,22 +33,14 @@ def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
     
     
     
-###Check if using absorptive structure factor for calculation
-    
-    print(colors.blue+'Incude absorption in calculation?  y/n    |  '+colors.black)
-    absorbInput = input()
-    
-#
-    
-    
-    
-    
+   
     
     #Check for GPU Availability: outputs True or False
     import torch
     use_cuda = torch.cuda.is_available()
-    print(use_cuda)    
-    
+    print(use_cuda)   
+    #Absorption calculation flag
+    absorb = False
     
     if use_cuda == False:
 
@@ -136,17 +128,19 @@ def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
         # cs=dsp.getCs('Spectral',n_atoms)
         # plts=[[q.flatten(),fq[i].flatten(),[cs[i],'+'],atom] for i,atom in enumerate(atoms)]
         # dsp.stddisp(plts,lw=2)
+        print(np.size(Fhkl))
         return hkl,Fhkl
-               
+                   
 ###
-        if absorbInput == 'y':
-            print(colors.blue+'Using absorptive structure factor'+colors.black)
-            Fhkl = absorptive_structure_factor_calc(Fhkl)
+    
+    if absorb == True:
+            print(colors.blue+'using absorptive structure factor'+colors.black)
+            Fhkl = Fhkl + absorb_coeff(Fhkl)
             return Fhkl
-        else:
-            pass
+    else:
+        return None
              
-#
+###
 
 def structure_factor2D(pattern,lat_vec,hk=None,hkMax=10,sym=1,v=0,eps=1):
     '''get structure factor
