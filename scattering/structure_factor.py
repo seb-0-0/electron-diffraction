@@ -13,12 +13,8 @@ ai = 1/np.array([0.1,0.25,0.26,0.27,1.5])**2
 fj = lambda q,j,eps:eps*(np.pi/ai[j])*np.exp(-(np.pi*q)**2/ai[j])
 
 
-#Function which calculates complex coefficient
-def absorb_coeff(x):
-    x = 0.1*1J*x
-    return x
 
-
+#Fitted paramaters from integral calculations
 
 
 
@@ -40,7 +36,7 @@ def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
     use_cuda = torch.cuda.is_available()
     print(use_cuda)   
     #Absorption calculation flag
-    absorb = False
+   
     
     if use_cuda == False:
 
@@ -129,18 +125,22 @@ def structure_factor3D(pattern,lat_vec,hkl=None,hklMax=10,sym=1,v=''):
         # plts=[[q.flatten(),fq[i].flatten(),[cs[i],'+'],atom] for i,atom in enumerate(atoms)]
         # dsp.stddisp(plts,lw=2)
         print(np.size(Fhkl))
+        #Function which calculates complex coefficient
+        def absorb_coeff(x):
+            #0: no absorption
+            if  absorb == 0:
+                return  None
+            #1: 0.1Fhkl
+            if  absorb == 1:
+                Fhkl = Fhkl + 0.1*1J*Fhkl
+                return Fhkl
+            #2:  absorb ==2
+            #fitted parameters from integral calculations
         return hkl,Fhkl
                    
-###
     
-    if absorb == True:
-            print(colors.blue+'using absorptive structure factor'+colors.black)
-            Fhkl = Fhkl + absorb_coeff(Fhkl)
-            return Fhkl
-    else:
-        return None
-             
-###
+       
+
 
 def structure_factor2D(pattern,lat_vec,hk=None,hkMax=10,sym=1,v=0,eps=1):
     '''get structure factor
